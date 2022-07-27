@@ -104,22 +104,22 @@ def init_once():
                 "CUDA support with UCX requires Numba for context management"
             )
 
-        cuda_visible_device = int(
-            os.environ.get("CUDA_VISIBLE_DEVICES", "0").split(",")[0]
-        )
+        cuda_device = dask.config.get("distributed.comm.ucx.cuda-device")
+        if cuda_device is None:
+            raise RuntimeError(
+                "Must provide CUDA device ID in 'distributed.comm.ucx.cuda-device' configuration slot"
+            )
         pre_existing_cuda_context = has_cuda_context()
         if pre_existing_cuda_context is not False:
             _warn_existing_cuda_context(pre_existing_cuda_context, os.getpid())
 
+        numba.cuda.select_device(cuda_device)
         numba.cuda.current_context()
 
         cuda_context_created = has_cuda_context()
-        if (
-            cuda_context_created is not False
-            and cuda_context_created != cuda_visible_device
-        ):
+        if cuda_context_created is not False and cuda_context_created != cuda_device:
             _warn_cuda_context_wrong_device(
-                cuda_visible_device, cuda_context_created, os.getpid()
+                cuda_device, cuda_context_created, os.getpid()
             )
 
     import ucp as _ucp
