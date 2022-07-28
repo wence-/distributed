@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from enum import IntEnum, auto
 from platform import uname
+from typing import NamedTuple
 
 from packaging.version import parse as parse_version
 
@@ -147,13 +148,18 @@ def _pynvml_handles():
         return pynvml.nvmlDeviceGetHandleByIndex(gpu_idx)
 
 
-def device_of_cuda_context() -> tuple[str, int] | None:
+class DeviceContextInfo(NamedTuple):
+    uuid: str
+    physical_id: int
+
+
+def device_of_cuda_context() -> DeviceContextInfo | None:
     """Obtain the device UUID and physical device index of the CUDA
     context associated with the current process.
 
     Returns
     -------
-    tuple[str, int] | None
+    DeviceContextInfo | None
 
         ``None`` if the current process has no attached CUDA context,
         otherwise a tuple of the UUID of the device for which there is
@@ -171,7 +177,9 @@ def device_of_cuda_context() -> tuple[str, int] | None:
             running_processes = pynvml.nvmlDeviceGetComputeRunningProcesses(handle)
         for proc in running_processes:
             if os.getpid() == proc.pid:
-                return pynvml.nvmlDeviceGetUUID(handle).decode()
+                return DeviceContextInfo(
+                    pynvml.nvmlDeviceGetUUID(handle).decode(), index
+                )
     return None
 
 

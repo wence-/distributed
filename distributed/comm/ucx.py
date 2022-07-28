@@ -46,8 +46,8 @@ else:
     ucp = None
 
 device_array = None
-existing_context = False
-context = False
+existing_context = None
+current_context = None
 
 
 _warning_suffix = (
@@ -83,7 +83,7 @@ def synchronize_stream(stream=0):
 def init_once():
     global ucp, device_array
     global ucx_create_endpoint, ucx_create_listener
-    global existing_context, context
+    global existing_context, current_context
 
     if ucp is not None:
         return
@@ -111,13 +111,13 @@ def init_once():
             )
         existing_context = device_of_cuda_context()
         if existing_context is not None:
-            _warn_existing_cuda_context(existing_context[0], os.getpid())
+            _warn_existing_cuda_context(existing_context.uuid, os.getpid())
 
         uuid = numba.cuda.select_device(cuda_device).uuid
         numba.cuda.current_context()
-        context = device_of_cuda_context()
-        if context is not None and context[0] != uuid:
-            _warn_cuda_context_wrong_device(uuid, context[0], os.getpid())
+        current_context = device_of_cuda_context()
+        if current_context is not None and current_context.uuid != uuid:
+            _warn_cuda_context_wrong_device(uuid, current_context.uuid, os.getpid())
 
     import ucp as _ucp
 
@@ -580,6 +580,10 @@ def _scrub_ucx_config():
     # ANY UCX options defined in config will overwrite high level dask.ucx flags
     valid_ucx_vars = list(get_config().keys())
     for k, v in options.items():
+        if k == "distributed.comm.ucx.cuda-device":
+            # This is just used to pass in the device for
+            # initialisation from the worker spinup.
+            continue
         if k not in valid_ucx_vars:
             logger.debug(
                 f"Key: {k} with value: {v} not a valid UCX configuration option"
