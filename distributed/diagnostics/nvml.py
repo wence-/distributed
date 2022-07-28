@@ -147,13 +147,23 @@ def _pynvml_handles():
         return pynvml.nvmlDeviceGetHandleByIndex(gpu_idx)
 
 
+def physical_id_to_uuid(device):
+    init_once()
+    if not is_initialized():
+        return None
+    handle = pynvml.nvmlDeviceGetHandleByIndex(device)
+    return pynvml.nvmlDeviceGetUUID(handle).decode()
+
+
 def has_cuda_context():
     """Check whether the current process already has a CUDA context created.
 
     Returns
     -------
     ``False`` if current process has no CUDA context created, otherwise returns the
-    index of the device for which there's a CUDA context.
+    index of the device for which there's a CUDA context. Note that
+    the returned device index is the physical device index (not the
+    virtual index relative to any setting of ``CUDA_VISIBLE_DEVICES``).
     """
     init_once()
     if not is_initialized():

@@ -28,7 +28,7 @@ from distributed.comm.utils import (
     host_array,
     to_frames,
 )
-from distributed.diagnostics.nvml import has_cuda_context
+from distributed.diagnostics.nvml import has_cuda_context, physical_id_to_uuid
 from distributed.utils import ensure_ip, get_ip, get_ipv6, log_errors, nbytes
 
 logger = logging.getLogger(__name__)
@@ -113,11 +113,11 @@ def init_once():
         if pre_existing_cuda_context is not False:
             _warn_existing_cuda_context(pre_existing_cuda_context, os.getpid())
 
-        numba.cuda.select_device(cuda_device)
+        uuid = numba.cuda.select_device(cuda_device).uuid
         numba.cuda.current_context()
-
         cuda_context_created = has_cuda_context()
-        if cuda_context_created is not False and cuda_context_created != cuda_device:
+        context_uuid = physical_id_to_uuid(cuda_context_created)
+        if cuda_context_created is not False and context_uuid != uuid:
             _warn_cuda_context_wrong_device(
                 cuda_device, cuda_context_created, os.getpid()
             )
