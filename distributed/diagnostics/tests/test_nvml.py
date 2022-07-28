@@ -54,14 +54,16 @@ def test_wsl_monitoring_enabled():
     assert nvml.NVML_STATE != nvml.NVMLState.DISABLED_WSL_INSUFFICIENT_DRIVER
 
 
-def run_has_cuda_context(queue):
+def run_device_of_cuda_context(queue):
     try:
-        assert not nvml.has_cuda_context()
+        assert nvml.device_of_cuda_context() is None
 
         import numba.cuda
 
         numba.cuda.current_context()
-        assert nvml.has_cuda_context() == 0
+        ctx = nvml.device_of_cuda_context()
+        assert ctx is not None
+        assert ctx[1] == 0
 
         queue.put(None)
 
@@ -69,7 +71,7 @@ def run_has_cuda_context(queue):
         queue.put(e)
 
 
-def test_has_cuda_context():
+def test_device_of_cuda_context():
     if nvml.device_get_count() < 1:
         pytest.skip("No GPUs available")
 
@@ -77,7 +79,7 @@ def test_has_cuda_context():
     # and uses a queue to pass exceptions back
     ctx = mp.get_context("spawn")
     queue = ctx.Queue()
-    p = ctx.Process(target=run_has_cuda_context, args=(queue,))
+    p = ctx.Process(target=run_device_of_cuda_context, args=(queue,))
     p.start()
     p.join()  # this blocks until the process terminates
     e = queue.get()
