@@ -99,6 +99,7 @@ def init_once():
     ):
         try:
             import numba.cuda
+            from cuda import cudart
         except ImportError:
             raise ImportError(
                 "CUDA support with UCX requires Numba for context management"
@@ -113,6 +114,7 @@ def init_once():
         if existing_context is not None:
             _warn_existing_cuda_context(existing_context.uuid, os.getpid())
 
+        cudart.cudaSetDevice(cuda_device)
         uuid = numba.cuda.select_device(cuda_device).uuid
         numba.cuda.current_context()
         current_context = device_of_cuda_context()
