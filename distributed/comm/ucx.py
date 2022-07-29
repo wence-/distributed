@@ -114,8 +114,9 @@ def init_once():
         if existing_context is not None:
             _warn_existing_cuda_context(existing_context.uuid, os.getpid())
 
+        # Must do this so that cudart lazyInit doesn't break things
         cudart.cudaSetDevice(cuda_device)
-        uuid = numba.cuda.select_device(cuda_device).uuid
+        uuid = numba.cuda.get_current_device().uuid
         numba.cuda.current_context()
         current_context = device_of_cuda_context()
         if current_context is not None and current_context.uuid != uuid:
