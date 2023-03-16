@@ -38,11 +38,17 @@ from distributed.utils import log_errors, sync
 
 if TYPE_CHECKING:
     # TODO import from typing (requires Python >=3.10)
+    import cudf
     import numpy as np
     import pandas as pd
     import pyarrow as pa
 
     from distributed.worker import Worker
+else:
+    import cudf
+    import numpy as np
+    import pandas as pd
+    import pyarrow as pa
 
 T_transfer_shard_id = TypeVar("T_transfer_shard_id")
 T_partition_id = TypeVar("T_partition_id")
@@ -394,6 +400,20 @@ class ArrayRechunkRun(ShuffleRun[ArrayRechunkShardID, NIndex, "np.ndarray"]):
         return await self.offload(_)
 
 
+def _from_arrow(table: pa.Table) -> pd.DataFrame | cudf.DataFrame:
+    if config.get("dataframe.backend") == "cudf":
+        return cudf.DataFrame.from_arrow(table)
+    else:
+        return table.to_pandas()
+
+
+def _to_arrow(df: pd.DataFrame | cudf.DataFrame) -> pa.Table:
+    if isinstance(df, cudf.DataFrame):
+        return df.to_arrow(preserve_index=True)
+    else:
+        return pa.Table.from_pandas(df, preserve_index=True)
+
+
 class DataFrameShuffleRun(ShuffleRun[int, int, "pd.DataFrame"]):
     """State for a single active shuffle execution
 
@@ -456,8 +476,6 @@ class DataFrameShuffleRun(ShuffleRun[int, int, "pd.DataFrame"]):
         memory_limiter_comms: ResourceLimiter,
         worker_memory_limit: int | None = None,
     ):
-        import pandas as pd
-
         super().__init__(
             id=id,
             run_id=run_id,
@@ -477,7 +495,12 @@ class DataFrameShuffleRun(ShuffleRun[int, int, "pd.DataFrame"]):
         for part, addr in worker_for.items():
             partitions_of[addr].append(part)
         self.partitions_of = dict(partitions_of)
-        self.worker_for = pd.Series(worker_for, name="_workers").astype("category")
+        if config.get("dataframe.backend") == "cudf":
+            self.worker_for = cudf.Series(worker_for, name="_workers").astype(
+                "category"
+            )
+        else:
+            self.worker_for = pd.Series(worker_for, name="_workers").astype("category")
 
     async def receive(self, data: list[tuple[int, bytes]]) -> None:
         await self._receive(data)
@@ -544,11 +567,11 @@ class DataFrameShuffleRun(ShuffleRun[int, int, "pd.DataFrame"]):
 
             def _() -> pd.DataFrame:
                 df = convert_partition(data)
-                return df.to_pandas()
+                return _from_arrow(df)
 
             out = await self.offload(_)
         except KeyError:
-            out = self.schema.empty_table().to_pandas()
+            out = _from_arrow(self.schema.empty_table())
         return out
 
 
@@ -934,7 +957,6 @@ def split_by_worker(
     Split data into many arrow batches, partitioned by destination worker
     """
     import numpy as np
-    import pyarrow as pa
 
     df = df.merge(
         right=worker_for.cat.codes.rename("_worker"),
@@ -948,7 +970,8 @@ def split_by_worker(
     # assert len(df) == nrows  # Not true if some outputs aren't wanted
     # FIXME: If we do not preserve the index something is corrupting the
     # bytestream such that it cannot be deserialized anymore
-    t = pa.Table.from_pandas(df, preserve_index=True)
+
+    t = _to_arrow(df)
     t = t.sort_by("_worker")
     codes = np.asarray(t.select(["_worker"]))[0]
     t = t.drop(["_worker"])
