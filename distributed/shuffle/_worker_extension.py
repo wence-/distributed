@@ -407,11 +407,21 @@ def _from_arrow(table: pa.Table) -> pd.DataFrame | cudf.DataFrame:
         return table.to_pandas()
 
 
-def _to_arrow(df: pd.DataFrame | cudf.DataFrame) -> pa.Table:
+def _to_arrow_sorted_by(df: pd.DataFrame | cudf.DataFrame, sortby: str) -> pa.Table:
     if isinstance(df, cudf.DataFrame):
-        return df.to_arrow(preserve_index=True)
+        return df.sort_values(sortby).to_arrow(preserve_index=True)
     else:
-        return pa.Table.from_pandas(df, preserve_index=True)
+        return pa.Table.from_pandas(df, preserve_index=True).sort_by(sortby)
+
+
+def _as_series_like(
+    df: pd.DataFrame | cudf.DataFrame, s: dict[int, str]
+) -> pd.Series | cudf.Series:
+    if isinstance(df, cudf.DataFrame):
+        ser = cudf.Series(s, name="_workers")
+    else:
+        ser = pd.Series(s, name="_workers")
+    return ser.astype("category")
 
 
 class DataFrameShuffleRun(ShuffleRun[int, int, "pd.DataFrame"]):
@@ -495,12 +505,7 @@ class DataFrameShuffleRun(ShuffleRun[int, int, "pd.DataFrame"]):
         for part, addr in worker_for.items():
             partitions_of[addr].append(part)
         self.partitions_of = dict(partitions_of)
-        if config.get("dataframe.backend") == "cudf":
-            self.worker_for = cudf.Series(worker_for, name="_workers").astype(
-                "category"
-            )
-        else:
-            self.worker_for = pd.Series(worker_for, name="_workers").astype("category")
+        self.worker_for = worker_for
 
     async def receive(self, data: list[tuple[int, bytes]]) -> None:
         await self._receive(data)
@@ -951,13 +956,14 @@ class ShuffleWorkerExtension:
 def split_by_worker(
     df: pd.DataFrame,
     column: str,
-    worker_for: pd.Series,
+    worker_map: dict[int, str],
 ) -> dict[Any, pa.Table]:
     """
     Split data into many arrow batches, partitioned by destination worker
     """
     import numpy as np
 
+    worker_for = _as_series_like(df, worker_map)
     df = df.merge(
         right=worker_for.cat.codes.rename("_worker"),
         left_on=column,
@@ -971,8 +977,7 @@ def split_by_worker(
     # FIXME: If we do not preserve the index something is corrupting the
     # bytestream such that it cannot be deserialized anymore
 
-    t = _to_arrow(df)
-    t = t.sort_by("_worker")
+    t = _to_arrow_sorted_by(df, "_worker")
     codes = np.asarray(t.select(["_worker"]))[0]
     t = t.drop(["_worker"])
     del df
