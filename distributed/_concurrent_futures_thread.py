@@ -9,7 +9,6 @@ from __future__ import annotations
 
 __author__ = "Brian Quinlan (brian@sweetapp.com)"
 
-import atexit
 import itertools
 import os
 import queue
@@ -45,9 +44,6 @@ def _python_exit():
         q.put(None)
     for t, q in items:
         t.join()
-
-
-atexit.register(_python_exit)
 
 
 class _WorkItem:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import atexit
 import copy
 import logging
 import math
@@ -686,7 +685,6 @@ async def run_spec(spec: dict[str, Any], *args: Any) -> dict[str, Worker | Nanny
     return workers
 
 
-@atexit.register
 def close_clusters():
     for cluster in list(SpecCluster._instances):
         if getattr(cluster, "shutdown_on_close", False):

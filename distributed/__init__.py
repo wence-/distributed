@@ -7,6 +7,7 @@ from distributed import widgets  # load distributed widgets second
 # isort: on
 
 import atexit
+import weakref
 
 import dask
 from dask.config import config  # type: ignore
@@ -91,6 +92,25 @@ def __getattr__(name):
 _python_shutting_down = False
 
 
+from distributed._concurrent_futures_thread import _python_exit
+from distributed.client import _close_global_client
+from distributed.deploy.spec import close_clusters
+
+# This is very delicate and is a work-around for issues with the UCX
+# comms backend. This weakref finalizer _has to be set up_ otherwise
+# we get errors on shutdown. The ordering of the remaining atexit
+# handlers seems not to matter for the bug, but this is the correct
+# order for them for teardown purposes. See
+# https://github.com/dask/distributed/issues/7726 for more discussion.
+weakref.finalize(lambda: None, lambda: None)
+atexit.register(_python_exit)
+atexit.register(close_clusters)
+atexit.register(_close_global_client)
+del _python_exit
+del _close_global_client
+del close_clusters
+
+
 @atexit.register
 def _():
     """Set a global when Python shuts down.
@@ -108,6 +128,8 @@ def _():
     global _python_shutting_down
     _python_shutting_down = True
 
+
+del _
 
 __all__ = [
     "Actor",

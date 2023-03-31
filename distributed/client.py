@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import atexit
 import copy
 import inspect
 import json
@@ -5663,6 +5662,3 @@ def _close_global_client():
                 c.loop.add_callback(c.close, timeout=3)
             else:
                 c.close(timeout=3)
-
-
-atexit.register(_close_global_client)
